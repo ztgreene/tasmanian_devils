@@ -1,0 +1,258 @@
+---
+title: "Differences in condition based on sex of Tasmanian Devils suffering from facial tumours"
+author: "Zac Greene"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  pdf_document: 
+    fig_crop: no
+    fig_width: 8
+    keep_tex: yes
+    latex_engine: xelatex
+    toc: yes
+  html_document:
+    toc: yes
+---
+
+# Part 1: Data Exploration
+## The study
+The data were extracted from Ruiz-Aravena et al. (2018).
+
+Tasmanian Devil (*Sarcophilus harrisii*) populations were sampled at two sites (labelled as site `A`, and site `B`).
+For each animal, the total volume of tumour tissue was measured, and the condition (labelled `BC`) of the animal was estimated using a measured weight to expected weight based on head width. A value of zero indicates the animal is comparable in weight to the expectation, given its head width. A negative value means the animal weighed less than expected.
+
+_____
+
+## Preparation and data
+As mentioned in the introduction, the data were extracted from Ruiz-Aravena et al. (2018), and prepared for analysis.
+```{r setUp, message=FALSE, warning=FALSE}
+# Packages used during this analysis
+library(plyr)
+library(tidyverse)
+
+rm(list = ls()) # clear memory
+```
+
+
+```{r}
+# 1. Read csv into df or tibble, make sure sex and site are factors
+getwd()
+df_fit <- read.csv('DevilCondition.csv')
+
+# Makes sure 'sex' and 'site' are factors
+df_fit$Sex <- factor(df_fit$Sex)
+df_fit$Site <- factor(df_fit$Site)
+```
+_____
+## Exploratory data analysis
+
+`ggplot` was used to produce a figure that indicates whether or not animal body condition is related to tumour volume (`LTV`), the sex of the animal, and the site where the animal was captured
+
+```{r}
+# 2. Figure that indicates whether or not BC is related to LTV, sex, and site
+ggplot(df_fit, aes(x = LTV, y = BC, color = Sex)) +
+  geom_point() +
+  facet_wrap(~ Site) +
+  labs(x = "Total tumour volume (log10 mm^3)", y = "Body condition", 
+       title="Actual body weight vs expected for sex, site, and tumour volume") +
+  theme_bw()
+```
+
+*Figure 1*. By inspection, the site the animal was captured doesn't seem to have an effect on body condition of devils. 
+That being said, devils from site B seem to have higher volumes of tumours on average.
+The figure also suggests that males tended to, on average, have a higher total tumour volume than females.  
+
+Whilst the site of capture, or sex of the animal don't seem to have a significant effect on body condition, there seems to be a clear negative effect of total tumour volume (`LTV`). 
+Additionally, whilst tumour volume looks to be significant in predicting body condition, there don't seem to be any indication of significant interaction effects, and the data seem comparably distributed for all combinations of sex and site, and tumour volume.
+
+____
+
+# Part 2: Backwards step-wise Regression
+## Initial model
+An initial model including all pairwise interactions, and the three-way interaction was fitted to predict body condition.
+A backwards step-wise regression was then performed to determine the significance of interactions between predictor variables.
+
+```{r}
+# Full model with all interaction terms included
+fit_1 <- lm(BC ~ LTV*Sex*Site, data = df_fit)
+# Examine three-way interaction
+drop1(fit_1, test='F')
+```
+The three-way interaction term  `LTV:Sex:Site` was not statistically significant at the 0.05 level (P = 0.460).
+This term was removed, a new model was fit, and the pairwise interactions were assessed.
+
+```{r}
+# Model with all pairwise interactions
+fit_2 <- lm(BC ~ LTV + Sex + Site + LTV:Sex + LTV:Site + Sex:Site, data = df_fit )
+# Examine the pairwise interactions
+drop1(fit_2, test = 'F')
+```
+None of the pairwise interactions were statistically significant.
+However `LTV:Site` had the highest P-value (P = 0.390), so this interaction term was removed, and a new model was fit.
+
+```{r}
+# Drop LTV:Site, refit model
+fit_3 <- lm(BC ~ LTV + Sex + Site + LTV:Sex + Sex:Site, data = df_fit )
+# Examine remaining interactions
+drop1(fit_3, test = 'F')
+```
+The interaction term `LTV:Sex` was not statistically significant (P = 0.216), so this term was removed, and the new model fit.
+
+```{r}
+# Drop LTV:Sex, refit model
+fit_4 <- lm(BC ~ LTV + Sex + Site + Sex:Site, data = df_fit )
+# Examine final interaction term
+drop1(fit_4, test = 'F')
+```
+The final interaction term `Sex:Site` was not statistically significant (P = 0.287), so it was removed, and a model containing no interactions was fit.
+
+```{r}
+# Drop Sex:Site, fit model without interactions
+fit_5 <- lm(BC ~ LTV + Sex + Site, data = df_fit )
+# Examine terms that can be removed
+drop1(fit_5, test = 'F')
+```
+This result suggested that only tumour volume (`LTV`) was statistically significant (P = 0.222). 
+`Site` was not significant in predicting body condition (P = 0.542), so was removed, and another model was fit.
+
+```{r}
+# Drop Site, fit with only LTV and Sex
+fit_6 <- lm(BC ~ LTV + Sex, data = df_fit )
+# Examine remaining terms
+drop1(fit_6, test='F')
+```
+Again, this result indicated that Only tumour volume (`LTV`) was statistically significant (P = 0.015).  
+`Sex` was not significant (p = 0.255), so it was removed, and a simple model using only `LTV` was fit.
+
+```{r}
+# Drop Sex, fit simple model with only LTV
+fit_7 <- lm(BC ~ LTV, data = df_fit )
+# Test LTV for significance
+drop1(fit_7, test='F')
+```
+The final test showed that tumour volume (`LTV`) was statistically significant (P = 0.022) in predicting a devil's body condition.  
+Since the model only had a single term, and it was significant, the backwards step-wise regression ended.  
+The resulting model was: `BC ~ LTV`  
+
+______
+
+## Parameter estimates and final model
+```{r}
+# Examine parameter estimates
+summary(fit_7)
+```
+The resulting model suggested that an animal's `BC` was inversely proportional to `LTV`.  
+The coefficient for `LTV` was -0.03423, which implies that for a tenfold increase in tumour volume (an increase of one in `LTV`), a devil's weight was roughly 3.4% lower than the expected for its head width.  
+However, The intercept term in the model is 0.13328.
+Interestingly, this suggests that devils exhibiting DFTD but possessing lower tumour volumes (`LTV` < ~3.8) were, on average, heavier than comparable healthy individuals (`BC` > 0).  
+It should be noted, however, that the model's `Multiple R-squared` value was 0.0473 - suggesting that, while tumour volume *is* significant, it explains very little of the overall variation in devil body condition.
+
+____
+## Predicted vs observed body conditions
+The final model (`fit_7`) was used to fit values for tumour volumes, including upper and lower values for a 95% confidence interval.
+```{r}
+predicted <- predict.lm(fit_7, interval = 'confidence')
+df_predicted <- as.data.frame(predicted)
+df_fit$fit <- df_predicted$fit
+df_fit$CIlower <- df_predicted$lwr
+df_fit$CIupper <- df_predicted$upr
+
+# Plot
+ggplot(df_fit, aes(x = LTV, y = BC)) +
+  geom_point()+
+  geom_line(aes(x = LTV, y= fit), color = 'red', size = 1) +
+  geom_ribbon(data = df_fit, aes(ymin = CIlower, ymax = CIupper, alpha = 0.25)) +
+  labs(x = "Total tumour volume (log10 mm^3)", y = "Body condition", 
+       title = "Predicted devil body condition for given tumour volume",
+       subtitle = "95% confidence interval included") +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+*Figure 2*: Predicted values different significantly from the actual values observed. 
+Whilst it is obvious there is a negative relationship between tumour volume and body condition, the model does a poor job of explaining the variation in devil body condition.  
+
+____
+## Adequacy of model
+The model arrived at is clearly inadequate. Whilst tumour volume clearly has a negative influence on body condition, the magnitude is difficult to determine. Additionally, whilst the other factors included in the study (site, sex) aren't statistically significant, there must clearly be a number of other factors that determine body condition.
+
+____
+## Adjustments to model and final comments
+By examining *Figure 2*, we can see that most of the data are clustered between 3-5 `LTV`, and the downward trend in body condition seems noticeable in this area.
+If we consider the possibility of animals being unaffected by small volumes of tumours, but much more significantly by larger volumes, it could be possible that the animals with relatively low `LTV` are overly influential in our model's predictions.  
+
+If we assume animals with small measured tumour volume to be no different from otherwise healthy animals, and only consider the devils with an `LTV` above a certain threshold, we might be able to fit a more adequate model.
+
+Only four (of 111) devils had an `LTV` below 2.5, with the rest significantly higher, so this was used (arbitrarily) as the threshold value.
+Another model was fitted using only the data with `LTV` greater than 2.5, and another backwards step-wise regression was performed (the details of this process have been omitted as it was identical to the procedure earlier in Part 2).  
+
+```{r}
+df_new <- filter(df_fit, LTV >= 2.5)
+```
+
+```{r include = FALSE}
+# FIt of full model with all interaction terms
+fit_1.1 <- lm(BC ~ LTV*Sex*Site, data = df_new)
+drop1(fit_1.1, test='F')
+
+# Drop 3-way interaction
+fit_2.1 <- lm(BC ~ LTV + Sex + Site + LTV:Sex + LTV:Site + Sex:Site, data = df_new )
+drop1(fit_2.1, test = 'F')
+
+# Drop LTV:Site
+fit_3.1 <- lm(BC ~ LTV + Sex + Site + LTV:Sex + Sex:Site, data = df_new )
+drop1(fit_3.1, test = 'F')
+
+# Drop LTV:Sex
+fit_4.1 <- lm(BC ~ LTV + Sex + Site + Sex:Site, data = df_new )
+drop1(fit_4.1, test = 'F')
+
+# Drop Sex:Site
+fit_5.1 <- lm(BC ~ LTV + Sex + Site, data = df_new )
+drop1(fit_5.1, test = 'F')
+
+# Drop Site
+fit_6.1 <- lm(BC ~ LTV + Sex, data = df_new )
+drop1(fit_6.1, test='F')
+
+# Drop Sex
+fit_7.1 <- lm(BC ~ LTV, data = df_new )
+drop1(fit_7.1, test='F')
+```
+The adjusted model:
+```{r}
+summary(fit_7.1)
+```
+```{r}
+# Predicted and 95% confidence interva;s
+predicted.1 <- predict.lm(fit_7.1, interval = 'confidence')
+df_predicted.1 <- as.data.frame(predicted.1)
+df_new$fit <- df_predicted.1$fit
+df_new$CIlower <- df_predicted.1$lwr
+df_new$CIupper <- df_predicted.1$upr
+
+# Plot
+ggplot(df_new, aes(x = LTV, y = BC)) +
+  geom_point()+
+  geom_line(aes(x = LTV, y= fit), color = 'red', size = 1) +
+  geom_ribbon(data = df_new, aes(ymin = CIlower, ymax = CIupper, alpha = 0.25)) +
+  labs(x = "Total tumour volume (log10 mm^3)", y = "Body condition", 
+       title = "Predicted devil body condition for given tumour volume",
+       subtitle = "95% confidence interval included") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+*Figure 3*: The adjusted model seems to describe the data observed more adequately than the original model (multiple R-squared = 0.8805 vs 0.0473).
+It seems to suggest there could be a 'threshold' level of tumour volume below which a devil's body condition is unaffected, and above which begins to decline.
+As to whether the other variables are influential; sex and site seem to have no significant effect, and there are no significant interaction effects.
+However, as always, more data would be useful!
+
+____
+## References
+Ruiz-Aravena M, Jones ME, Carver S, Estay S, Espejo C, Storfer A, Hamede RK. 2018 Sex bias
+in ability to cope with cancer: Tasmanian devils and facial tumour disease. Proc. R. Soc. B
+285: 20182239. [http://dx.doi.org/10.1098/rspb.2018.2239]
+
+
+
+
+
